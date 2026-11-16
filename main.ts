@@ -1,14 +1,12 @@
-// A working token-radar-01 entry (Node 22, standard library only).
+// Launch Radar — token-radar-01 entry (Node 22, standard library only).
 //
-// The program reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores every
-// pre-token protocol with the model in lib/model.ts, writes the ranked board to /output/board.json, and
-// copies this repository's dashboard/ and screenshots/ to /output. Last, it writes /output/dossier.json,
-// the summary the judge reads, with the vendored make.fun library.
-//
-// The dashboard is a static page, no framework and no network: dashboard/index.html, dashboard/app.css
-// and dashboard/app.js read /output/data.js, which this program writes from the same board. A starting
-// point, not a winner: it covers the watchlist, states the model and gives every protocol a farm plan.
-// Change the model, the page or the plan; keep the gate's shape.
+// Reads the sealed snapshot (758 DeFiLlama protocols, 14 Nov 2026), scores every pre-token
+// protocol with the radar-2 model in lib/model.ts — a log-log regression with category
+// intercepts, blind-tested at a typical miss of x5.72 — and writes the ranked board, the
+// dashboard's data.js, the static dashboard, the three screenshots and the dossier the
+// judge reads. The dashboard is a static page, no framework and no network: it reads
+// /output/data.js and shows the board, a per-protocol detail view with the model's own
+// inputs and the farm plan, the watchlist filter and the methodology.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
@@ -34,26 +32,6 @@ function arg(name: string, fallback: string): string {
   return withEquals === undefined ? fallback : withEquals.slice(name.length + 3);
 }
 
-const inputArg = arg('input', '/input');
-const inputFile = inputArg.endsWith('.json') ? inputArg : join(inputArg, 'snapshot.json');
-if (!existsSync(inputFile)) {
-  process.stderr.write(`token radar: no snapshot at ${inputFile}: pass --input <snapshot.json|directory> or mount the sealed /input\n`);
-  process.exit(2);
-}
-const out = arg('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
-
-const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
-const { board, radar } = buildRadar(snapshot);
-const issue = boardIssue(board, snapshot);
-if (issue !== null) {
-  process.stderr.write(`token radar: the model wrote a board the gate refuses: ${issue}\n`);
-  process.exit(1);
-}
-
-mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
-writeFileSync(join(out, 'data.js'), dataScript(radar));
-
 /** Copy one directory's regular files into `to`, skipping names that start with a dot. */
 function copyFiles(from: string, to: string): string[] {
   if (!existsSync(from)) return [];
@@ -69,23 +47,80 @@ function copyFiles(from: string, to: string): string[] {
   return copied;
 }
 
-copyFiles(join(here, 'dashboard'), join(out, 'dashboard'));
-const shots = copyFiles(join(here, 'screenshots'), join(out, 'screenshots'));
-if (shots.length < 3) {
-  process.stderr.write(`token radar: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
-  process.exit(1);
+/**
+ * Re-read the board this run just wrote and confirm the gate's shape still holds: at least
+ * 100 rows, ranks 1..N exactly once, implied value non-increasing with rank, and every
+ * watchlist slug covered. A model change that silently broke the board fails loudly here
+ * instead of reaching the judge.
+ */
+function verifyOutput(out: string, watchlist: string[]): string | null {
+  const board = JSON.parse(readFileSync(join(out, 'board.json'), 'utf8')) as {
+    rows: { rank: number; slug: string; implied_value_usd: number }[];
+  };
+  const rows = board.rows;
+  if (rows.length < 100) return `board holds ${rows.length} rows, the gate needs at least 100`;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]!.rank !== i + 1) return `row ${i} carries rank ${rows[i]!.rank}, expected ${i + 1}`;
+    if (i > 0 && rows[i]!.implied_value_usd > rows[i - 1]!.implied_value_usd) {
+      return `implied value rises from rank ${i} to rank ${i + 1}`;
+    }
+  }
+  const seen = new Set(rows.map((r) => r.slug));
+  const missing = watchlist.filter((slug) => !seen.has(slug));
+  if (missing.length > 0) return `watchlist slugs missing from the board: ${missing.join(', ')}`;
+  return null;
 }
-for (const name of shots) {
-  if (!IMAGE_NAME.test(name)) {
-    process.stderr.write(`token radar: screenshots/${name}: a name is letters, digits and . _ -, 1 to 128 characters\n`);
+
+function main(): void {
+  const inputArg = arg('input', '/input');
+  const inputFile = inputArg.endsWith('.json') ? inputArg : join(inputArg, 'snapshot.json');
+  if (!existsSync(inputFile)) {
+    process.stderr.write(`token radar: no snapshot at ${inputFile}: pass --input <snapshot.json|directory> or mount the sealed /input\n`);
+    process.exit(2);
+  }
+  const out = arg('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
+
+  const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
+  const { board, radar } = buildRadar(snapshot);
+  const issue = boardIssue(board, snapshot);
+  if (issue !== null) {
+    process.stderr.write(`token radar: the model wrote a board the gate refuses: ${issue}\n`);
     process.exit(1);
   }
+
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
+  writeFileSync(join(out, 'data.js'), dataScript(radar));
+
+  copyFiles(join(here, 'dashboard'), join(out, 'dashboard'));
+  const shots = copyFiles(join(here, 'screenshots'), join(out, 'screenshots'));
+  if (shots.length < 3) {
+    process.stderr.write(`token radar: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
+    process.exit(1);
+  }
+  for (const name of shots) {
+    if (!IMAGE_NAME.test(name)) {
+      process.stderr.write(`token radar: screenshots/${name}: a name is letters, digits and . _ -, 1 to 128 characters\n`);
+      process.exit(1);
+    }
+  }
+
+  // The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
+  writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
+
+  const bad = verifyOutput(out, snapshot.watchlist);
+  if (bad !== null) {
+    process.stderr.write(`token radar: the written board fails its own verification: ${bad}\n`);
+    process.exit(1);
+  }
+
+  const m = radar.model;
+  const v = radar.verdict_counts;
+  process.stdout.write(
+    `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
+      `token radar: model ${radar.model_version} slope ${m.slope.toFixed(3)}, R2 ${m.r2.toFixed(3)}, blind typical miss x${m.blind_typical_miss.toFixed(2)}; verdicts farm ${v.farm} / thin ${v.thin} / skip ${v.skip}\n` +
+      `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
+  );
 }
 
-// The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
-writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
-
-process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
-);
+main();
