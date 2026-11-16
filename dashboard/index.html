@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#board">Skip to the board</a>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span class="brand-name">Launch Radar</span></div>
+  <div class="top-meta"><span>Snapshot 2026-11-14</span><span>DeFiLlama protocol index</span><span>model radar-2</span></div>
+</header>
+<main id="board" tabindex="-1" aria-busy="true"></main>
+<section class="panel method" id="method">
+  <h2>How implied value is computed</h2>
+  <p class="sub">One function scores every row. No protocol name is special-cased, no row is hand-picked, and every number below is computed from the snapshot — the dashboard renders the same figures from <code>data.js</code>.</p>
+  <p class="formula">ln(market cap) = 7.918 + 0.460 &times; ln(TVL) + category adjustment &nbsp;·&nbsp; implied = exp(...) &times; quality &nbsp;·&nbsp; band = base &times; e<sup>&plusmn;2.11</sup></p>
+  <ul class="method-list">
+    <li><b>128 comps.</b> The regression learns from the 128 protocols that already have a token and a TVL above zero. Slope 0.460, intercept 7.918, residual &sigma; 2.111, R&sup2; 0.265. A slope below 1 means market cap grows slower than TVL: ten times the TVL is worth about three times the value.</li>
+    <li><b>13 category adjustments.</b> Lending is the reference (15 comps, adjustment 0). Privacy +1.39 (3), Basis Trading +1.23 (7), CEX +1.04 (9), Canonical Bridge +0.92 (8), Cross Chain Bridge +0.76 (4), RWA +0.34 (9), Dexs +0.23 (11), Bridge +0.05 (6), Indexes +0.04 (3), Yield &minus;0.62 (9), Liquid Staking &minus;0.80 (9), Yield Aggregator &minus;0.98 (4), CDP &minus;1.02 (3). 227 rows use their category's adjustment.</li>
+    <li><b>115 rows fall back to the median.</b> A category earns its own intercept only with at least 3 tokenized comps behind it — one protocol cannot set a category's multiple. Those rows use the snapshot's overall upper-median market-cap/TVL of 0.223&times;. Each detail view says which of the two its row used and how many comps back it.</li>
+    <li><b>Quality factors.</b> Growth clamps 1 + change_7d/100 to 0.8&ndash;1.25; breadth is min(1 + 0.02 &times; (chains &minus; 1), 1.2); age is 0.9 when listed under 90 days, else 1. Implied value is the regression base times their product, rounded to the dollar.</li>
+    <li><b>Blind test: typical miss &times;5.72.</b> The comps are split in half by slug; the model fits the first 64 and predicts the second 64, using the same fallback rule. Typical (geometric-mean) miss &times;5.72, median miss &times;4.49. The band on every row says the same thing in dollars: the honest answer is a range, not a point.</li>
+    <li><b>Farm economics.</b> Expected airdrop = base &times; 5% &times; (capital / TVL) &times; 20. Cost = gas on the protocol's cheapest chain + 2% opportunity cost on the capital. Capital is $250 / $150 / $100 / $50 by TVL tier; hold is 60 / 45 / 30 days by age. Verdict: <b>farm</b> when expected is at least 3&times; cost (164 rows), <b>thin</b> when at least 1&times; (129), <b>skip</b> below that (49).</li>
+    <li><b>What the board covers.</b> 758 protocols in the snapshot, 342 pre-token scored, 40 of them on the $50M-TVL watchlist — all 40 covered. The 416 protocols that already have a token are set aside; their market caps are the comps the model learns from. Median row: $17.0M TVL, $7.4M implied.</li>
+  </ul>
+  <p class="sub">Implied value is a model, not a price. It is the value a token would have if this protocol were priced like the average protocol in its category — nothing more.</p>
+</section>
+<footer class="foot"><span>Launch Radar &middot; snapshot 2026-11-14 &middot; model radar-2</span><span>Static page: no network, all data in data.js.</span></footer>
+<dialog class="detail" id="detail" aria-labelledby="detail-title"></dialog>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
